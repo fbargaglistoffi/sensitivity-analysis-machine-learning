@@ -15,8 +15,8 @@ In the following document we depict the code used to build, describe and clean t
 ```{r library_upload, message=FALSE, warning=FALSE, include=TRUE, results='hide', include=FALSE}
 # Upload Functions and Packages
 rm(list=ls())
-source("/Volumes/GoogleDrive/My Drive/Research/Financial Literacy/wetransfer-75b189/outliers_bart.R")
-source("/Volumes/GoogleDrive/My Drive/Research/Financial Literacy/wetransfer-75b189/sensitivity_bart.R")
+source("outliers_bart.R")
+source("sensitivity_bart.R")
 library(haven)
 library(BART)
 library(ggplot2)
@@ -34,7 +34,7 @@ library(mice)
 ```{r setup, include=FALSE}
 # Set the Working Directory
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = '/Volumes/GoogleDrive/My Drive/Research/Financial Literacy/wetransfer-75b189')
+knitr::opts_knit$set(root.dir = '...')
 ```
 
 ## Upload and Merge Data
@@ -50,7 +50,7 @@ In particular, we will focus on predicting the financial literacy scores of stud
 ********************************************************************************
 ***PISA DATA
 clear all
-cd "G:\Il mio Drive\Research\Financial Literacy\wetransfer-75b189"
+cd "..."
 use PISA_DATA2015, clear
 
 ********************************************************************************
@@ -583,9 +583,9 @@ In the following chunks of code, we introduce the functions build to predict the
 
 The function is called by using the \texttt{outlier\_bart} command. This function computes the posterior distribution of both train and test data and it outputs the means and standard deviation of each unit level posterior prediction. 
 
-The function needs to specify: (i) a matrix of predictors in the training sample (\texttt{x\_train}), (ii) a matrix of predictors in the test sample (\texttt{x\_test}), (iii) a vector of observed values for the financial literacy score in the test sample (\texttt{y\_test}), (iv) a number of burn-in samples (iterations) to be discarded from the computation of the posterior means and standard deviation (\texttt{nburn}), (v) a number of iterations used for the computation (\texttt{nsamp}), (vi) an outlier coefficient (\texttt{outlier_coef}): e.g., if this coefficient is set to 2, it means that the algorithm will consider as outliers those observations with posterior mean larger than two standard deviations from the mean (i.e., observation outside the 95\% confidence intervals for the mean value) and/or two absolute deviations from the median.
+The function needs to specify: (i) a matrix of predictors in the training sample (\texttt{x\_train}), (ii) a matrix of predictors in the test sample (\texttt{x\_test}), (iii) a vector of observed values for the financial literacy score in the test sample (\texttt{y\_test}), (iv) a number of burn-in samples (iterations) to be discarded from the computation of the posterior means and standard deviation (\texttt{nburn}), (v) a number of iterations used for the computation (\texttt{nsamp}), (vi) an outlier coefficient (\texttt{outlier\_coef}): e.g., if this coefficient is set to 2, it means that the algorithm will consider as outliers those observations with posterior mean larger than two standard deviations from the mean (i.e., observation outside the 95\% confidence intervals for the mean value) and/or two absolute deviations from the median.
 
-The function outputs: (i) observations with posterior predicted financial literacy scores significantly lower (\texttt{low outliers (sd)}) or higher (\texttt{high outliers (sd)}) than the posterior predicted sample mean score (the significance level can be tuned by changing the \texttt{outlier_coef} parameter);
+The function outputs: (i) observations with posterior predicted financial literacy scores significantly lower (\texttt{low outliers (sd)}) or higher (\texttt{high outliers (sd)}) than the posterior predicted sample mean score (the significance level can be tuned by changing the \texttt{outlier\_coef} parameter);
 (ii) observations with posterior predicted financial literacy scores $k$ (this parameter is set using the \texttt{outlier_coef}) absolute deviations lower (\texttt{low outliers (sd)}) or higher (\texttt{high outliers (sd)}) than the predicted sample median score.
 
 
@@ -635,9 +635,9 @@ data <- bart_post$Data
 
 Here we perform the "sensitivity analysis" for the predictions obtained from the BART algorithm. Since these predictions are the foundations of our paper, it is important to check whether or not they are stable. Let's now see in detail how we implement these robustness checks in \texttt{R}. 
 
-The function \texttt{sensitivity_bart} needs to specify: (i) a matrix of predictors in the training sample (\texttt{x\_train}), (ii) a matrix of predictors in the test sample (\texttt{x\_test}), (iii) a vector of observed values for the financial literacy score in the test sample (\texttt{y\_test}), (iv) a number of burn-in samples (iterations) to be discarded from the computation of the posterior means and standard deviation (\texttt{nburn}), (v) a number of iterations used for the computation (\texttt{nsamp}), (vi) the level of significance for computing differences between posterior predicted values (original model vs augmented model): \texttt{alpha}.
+The function \texttt{sensitivity\_bart} needs to specify: (i) a matrix of predictors in the training sample (\texttt{x\_train}), (ii) a matrix of predictors in the test sample (\texttt{x\_test}), (iii) a vector of observed values for the financial literacy score in the training sample (\texttt{y\_train}), (iv) a number of burn-in samples (iterations) to be discarded from the computation of the posterior means and standard deviation (\texttt{nburn}), (v) a number of iterations used for the computation (\texttt{nsamp}), (vi) the level of significance for computing differences between posterior predicted values (original model vs augmented model): \texttt{alpha}.
 
-The function outputs: (i) \texttt{rmse_original}: estimated RMSE for the original model, (ii) \texttt{rmse_augmented}: estimated RMSE for the augmented model, (iii) \texttt{rsquared_original}: estimated R squared for the original model, (iv) \texttt{rsquared_augmented}: estimated R squared for the augmented model.
+The function outputs: (i) \texttt{rmse\_original}: estimated RMSE for the original model, (ii) \texttt{rmse\_augmented}: estimated RMSE for the augmented model, (iii) \texttt{rsquared\_original}: estimated R squared for the original model, (iv) \texttt{rsquared\_augmented}: estimated R squared for the augmented model.
 
 ```{r results = 'hide', include = TRUE, message = FALSE, warning = FALSE}
 set.seed(2019)
@@ -663,7 +663,7 @@ In order to test if the predictive performance of the augmented model is better 
 In the following chunk of code we construct confidence intervals for the $RMSE$.
 The standard error of the $RMSE$ can be derived as follows:
 \begin{equation}
-se_{RMSE}=sqrt{\frac{n}{\chi^2_{1-\alpha,n}}}\cdot RMSE.
+se_{RMSE}=\sqrt{\frac{n}{\chi^2_{1-\alpha,n}}}\cdot RMSE.
 \end{equation}
 
 ```{r}
