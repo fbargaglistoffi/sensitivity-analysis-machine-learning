@@ -1,6 +1,6 @@
 #  Sensitivity of Machine Learning Predictions
 
-In this repository we provide the code to reproduce the analysis of the paper "Assessing Sensitivity of Machine Learning Predictions.A Novel Toolbox with an Application to Financial Literacy" by F.J. Bargagli Stoffi, K. De Beckker, J. E. Maldonado and K. De Witte.
+In this repository we provide the code to reproduce the analysis of the paper ["Assessing Sensitivity of Machine Learning Predictions.A Novel Toolbox with an Application to Financial Literacy"](https://arxiv.org/abs/2102.04382) by F.J. Bargagli Stoffi, K. De Beckker, J. E. Maldonado and K. De Witte.
 
 The code is organized as follows:
 * <tt>`Data`</tt>: folder containing the .csv data sets used for the analyses;
