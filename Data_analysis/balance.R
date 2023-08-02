@@ -1,10 +1,10 @@
 setwd("~/Dropbox/Projects/FLS-ML/")
 
 rm(list=ls())
-source("~/Github/transport-forest/Functions/outliers_bart.R")
-source("~/Github/transport-forest/Functions/sensitivity_bart.R")
-source("~/Github/transport-forest/Functions/calibration.R")
-source("~/Github/transport-forest/Functions/standardize.R")
+source("~/Github/sensitivity-analysis-machine-learning/Functions/outliers_bart.R")
+source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_bart.R")
+source("~/Github/sensitivity-analysis-machine-learning/Functions/calibration.R")
+source("~/Github/sensitivity-analysis-machine-learning/Functions/standardize.R")
 
 # data cleaning
 library(devtools)
