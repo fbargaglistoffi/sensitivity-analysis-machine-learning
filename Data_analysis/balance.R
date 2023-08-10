@@ -1,4 +1,4 @@
-setwd("~/Dropbox/Projects/FLS-ML/")
+setwd("~/Library/CloudStorage/Dropbox/Projects/FLS-ML")
 
 rm(list=ls())
 source("~/Github/sensitivity-analysis-machine-learning/Functions/outliers_bart.R")
@@ -10,6 +10,7 @@ source("~/Github/sensitivity-analysis-machine-learning/Functions/standardize.R")
 library(devtools)
 library(tidyverse)
 library(haven)
+library(dplyr)
 
 # frameworks
 library(mice)
@@ -28,9 +29,11 @@ library(ggplot2)
 library(knitr)
 
 # clean data
-merged_data <- read.csv("Data/PISA_merged_2015_Italy.csv", header = TRUE)
+merged_data <- read_csv("Data/PISA_merged_2015_Italy.csv")
 
-pisa_data <- merged_data %>% dplyr::na_if(99999)
+pisa_data <- merged_data %>%
+  mutate(across(where(is.character), ~ na_if(.x, "99999")),
+         across(where(is.numeric), ~ na_if(.x, 99999)))
 pisa_data$AGE <- factor(round(pisa_data$AGE))
 pisa_data <- pisa_data[which(pisa_data$Region %in% c("Italy: Campania", "Italy: Lombardia")),]
 pisa_data$LOMBARDIA <-  as.numeric(pisa_data$Region == "Italy: Lombardia")
@@ -41,7 +44,7 @@ vars = c("SC001Q01TA","SC048Q01NA","SC048Q02NA","SC048Q03NA","ST001D01T","ST004D
          "SCHSIZE","CLSIZE","RATCMP1","LEADPD","SCHAUT","EDUSHORT","STRATIO")
 
 imputed <- pisa_data[,vars]
-imputed_data <- mice(imputed, method = 'cart', maxit = 1,  m = 1, remove.collinear = FALSE)
+imputed_data <- mice(imputed, method = 'cart', maxit = 5,  m = 1, remove.collinear = FALSE)
 demdata <- mice::complete(imputed_data)
 datmodel <- cbind(demdata, CNTSTUID = pisa_data$CNTSTUID, 
                   LOMBARDIA = pisa_data$LOMBARDIA, 
@@ -51,13 +54,13 @@ datmodel[sapply(datmodel, is.character)] <- lapply(datmodel[sapply(datmodel, is.
 
 S <- datmodel$LOMBARDIA
 n_1 <- sum(S)
-X <- model.matrix(formula(paste('~', vars, collapse = "+")), data = datmodel)[,-1]
+X <- model.matrix(~ ., data = datmodel[,vars])[,-1]
 X0 <- unname(X[S == 0,])
 
 # Approximate (or Exact) Quadratic Balancing
 
 fit_t <- standardize(X = X[S == 1,], Z = S[S == 1], target = colMeans(X[S == 0,]),
-                     exact_global = FALSE, scale_sample_size = TRUE, lambda = 1)
+                     exact_global = FALSE, scale_sample_size = TRUE, lambda = 0)
 weights <- rep(1, nrow(X))
 weights[S == 1] <- n_1*c(fit_t$weights)
 weights[weights < 0] <- 0

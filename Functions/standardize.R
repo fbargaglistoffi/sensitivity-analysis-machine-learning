@@ -167,6 +167,51 @@ create_P_matrix <- function(n, aux_dim) {
   return(Matrix::bdiag(Matrix::Diagonal(n, 0), Matrix::Diagonal(aux_dim, 1)))
 }
 
+create_P_matrix_treatment_kernel <- function(n, X0s, Xtaus, kernel0, kerneltau,
+                                             pro_trt, pro_ctr, S_factor, gc) {
+  # tic("total P matrix time")
+  # construct kernel matrices for each site
+  # tic("kernel matrices 0 time")
+  kern_list <- lapply(X0s, function(x) kernlab::kernelMatrix(kernel0, x))
+  # toc(log = TRUE)
+  
+  # construct propensity matrices for each site
+  # tic("propensity matrices 0 time")
+  pro_diff <- split(pro_trt - pro_ctr, S_factor)
+  pro_list <- lapply(pro_diff, function(x) x %*% t(x))
+  rm(pro_diff)
+  # toc(log = TRUE)
+  
+  # multiply kernel and propensity matrices for each site
+  # tic("multiply kernel and propensity matrices 0 time")
+  kern_list0 <- mapply(function(x, y) x * y, kern_list, pro_list, SIMPLIFY = FALSE)
+  # toc(log = TRUE)
+  
+  # construct kernel matrices for each site
+  # tic("kernel matrices tau time")
+  kern_list <- lapply(Xtaus, function(x) kernlab::kernelMatrix(kerneltau, x))
+  # toc(log = TRUE)
+  
+  # construct propensity matrices for each site
+  # tic("propensity matrices tau time")
+  pro_list <- lapply(split(pro_trt, S_factor), function(x) x %*% t(x))
+  # toc(log = TRUE)
+  
+  # multiply kernel and propensity matrices for each site
+  # tic("multiply kernel and propensity matrices tau time")
+  kern_listtau <- mapply(function(x, y) x * y, kern_list, pro_list, SIMPLIFY = FALSE)
+  # toc(log = TRUE)
+  
+  # add matrices
+  # tic("add and block diagonalize time")
+  P <- Matrix::bdiag(mapply(function(x, y) x + y, kern_list0, kern_listtau, SIMPLIFY = FALSE))
+  # toc(log = TRUE)
+  # toc(log = TRUE)
+  if (gc) gc()
+  
+  return(P)
+}
+
 #' Get a set of uniform weights for initialization
 #' @param Xz list of J n x d matrices of covariates split by group
 #'
@@ -350,87 +395,5 @@ check_data <- function(X, target, Z, Xz, lambda, lowlim, uplim, data_in) {
     stop("Upper threshold must be higher than 1 / size of smallest group")
   }
   
-}
-
-#' Re-weight populations to group targets
-#' @param X n x d matrix of covariates
-#' @param Z Vector of group indicators with J levels
-#' @param lambda Regularization hyper parameter, default 0
-#' @param lowlim Lower limit on weights, default 0
-#' @param uplim Upper limit on weights, default 1
-#' @param scale_sample_size Whether to scale the dispersion penalty by the sample size of each group, default T
-#' @param verbose Whether to show messages, default T
-#' @param n_cores Number of cores to find weights in parallel
-#' @param eps_abs Absolute error tolerance for solver
-#' @param eps_rel Relative error tolerance for solver
-#' @param ... Extra arguments for osqp solver
-#'
-#' @return \itemize{
-#'          \item{weights }{Estimated weights as an n x J matrix}
-#'          \item{imbalance }{Imbalance in covariates as a d X J matrix}
-#'          }
-#' @export
-standardize_indirect <- function(X, Z, lambda = 0, lowlim = 0, uplim = 1,
-                                 scale_sample_size = F, verbose = TRUE, n_cores = 1,
-                                 eps_abs = 1e-5, eps_rel = 1e-5, ...) {
-  
-  # get distinct values of Z
-  uni_z <- sort(unique(Z))
-  
-  # iterate over them, using the average in Z as the target
-  standz <- function(z) {
-    standardize_indirect_z(z, X, Z, lambda, lowlim, uplim, scale_sample_size,
-                           verbose, eps_abs, eps_rel)
-  }
-  out <- parallel::mclapply(uni_z, standz, mc.cores = n_cores)
-  
-  # combine into one list
-  out <- Reduce(function(x,y) {
-    list(weights = cbind(x$weights, y$weights),
-         imbalance = cbind(x$imbalance, y$imbalance)
-    )}, out)
-  
-  return(out)
-}
-
-#' Re-weight population to group z's target
-#' @param focal_z Group to use as target
-#' @param X n x d matrix of covariates
-#' @param Z Vector of group indicators with J levels
-#' @param lambda Regularization hyper parameter, default 0
-#' @param lowlim Lower limit on weights, default 0
-#' @param uplim Upper limit on weights, default 1
-#' @param scale_sample_size Whether to scale the dispersion penalty by the sample size of each group, default T
-#' @param verbose Whether to show messages, default T
-#' @param eps_abs Absolute error tolerance for solver
-#' @param eps_rel Relative error tolerance for solver
-#' @param ... Extra arguments for osqp solver
-#'
-#' @return \itemize{
-#'          \item{weights }{Estimated primal weights as an n x J matrix}
-#'          \item{imbalance }{Imbalance in covariates as a d X J matrix}
-#'          }
-#' @export
-standardize_indirect_z <- function(focal_z, X, Z, lambda = 0, 
-                                   lowlim = 0, uplim = 1,
-                                   scale_sample_size = F, verbose = TRUE,
-                                   eps_abs = 1e-5, eps_rel = 1e-5,
-                                   ...) {
-  # create target
-  z_idx <- which(Z == focal_z)
-  nz <- length(z_idx)
-  n <- nrow(X)
-  target_z <- colMeans(X[z_idx, , drop = F])
-  
-  # get standardization weights
-  stand_z <- standardize(X[-z_idx, , drop = F], target_z, rep(1, n - nz),
-                         lambda, lowlim, uplim, scale_sample_size, NULL, 
-                         verbose, FALSE, FALSE, FALSE, eps_abs, eps_rel, ...)
-  
-  # set weights to zero within group z
-  weights <- numeric(n)
-  weights[-z_idx] <- stand_z$weights
-  
-  return(list(weights = weights, imbalance = stand_z$imbalance))
 }
 
