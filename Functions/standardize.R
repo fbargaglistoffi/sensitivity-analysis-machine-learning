@@ -27,48 +27,145 @@
 #'                  \item{constraints }{A, l , u}
 #'}}}
 #' @export
-standardize <- function(X, target, Z, lambda = 0, lowlim = 0, uplim = 1,
+standardize <- function(X1, X0, lambda = 0, lowlim = 0, uplim = 1,
                         scale_sample_size = T, data_in = NULL, verbose = TRUE, 
                         return_data = TRUE, exact_global = T, init_uniform = F,
                         eps_abs = 1e-5, eps_rel = 1e-5, ...) {
   
   # convert X to a matrix
   X <- as.matrix(X)
-  
-  # split matrix by targets
-  Z_factor <- as.factor(Z)
-  Xz <- split.data.frame(X, Z_factor)
-  
-  # ensure that target is a vector
-  target <- c(target)
-  
-  check_data(X, target, Z, Xz, lambda, lowlim, uplim, data_in)
-  
-  unique_Z <- levels(Z_factor)
-  J <- length(unique_Z)
-  # dimension of auxiliary weights
-  aux_dim <- J * ncol(X)
   n <- nrow(X)
   
-  idxs <- split(1:nrow(X), Z_factor)
+  # check data
+  check_data(X1, X0, lambda, lowlim, uplim, data_in)
   
-  # Setup the components of the QP and solve
+  # create propensity score multipliers and split by site
+  # pro_trt <- Z / (pscores * nj[S_factor])
+  # pro_trt_split <- split(pro_trt, S_factor)
+  # pro_ctr <- (1 - Z) / ((1 - pscores) * nj[S_factor])
+  # pro_ctr_split <- split(pro_ctr, S_factor)
+  
+  # construct linear term vector
   if(verbose) message("Creating linear term vector...")
   if(is.null(data_in$q)) {
-    q <- create_q_vector(Xz, target, aux_dim)
+    q <- create_q_vector_kernel(X1, X0, kerneltau)
   } else {
     q <- data_in$q
   }
   
+  create_P_matrix_treatment_kernel <- function(n, X0s, Xtaus, kernel0, kerneltau,
+                                               pro_trt, pro_ctr, S_factor, gc) {
+
+   
+    # toc(log = TRUE)
+    
+    return(P)
+  }
+  
+  # construct quadratic term matrix
   if(verbose) message("Creating quadratic term matrix...")
   if(is.null(data_in$P)) {
-    P <- create_P_matrix(n, aux_dim)
+    P <- kernlab::kernelMatrix(kernel, X1)
   } else {
     P <- data_in$P
   }
   
-  I0 <- create_I0_matrix(Xz, scale_sample_size, n, aux_dim)
+  I0 <- Matrix::Diagonal(n, n)
   P <- P + lambda * I0
+  
+  create_constraints_treatment_kernel <- function(X0s, Xtaus, Z, S_factor,
+                                                  pro_trt_split, pro_ctr_split,
+                                                  lowlim, uplim, verbose) {
+    
+    n <- nrow(X1)
+    d <- ncol(X1)
+
+    
+    if(verbose) message("\tx Sum to one constraint")
+    # sum-to-one constraint for each group
+    trt_mat <- Matrix::t(Matrix::bdiag(split(Z, S_factor)))
+    ctr_mat <- Matrix::t(Matrix::bdiag(split(1 - Z, S_factor)))
+    A1 <- Matrix::rbind2(trt_mat, ctr_mat)
+    
+    rm(trt_mat)
+    rm(ctr_mat)
+    
+    l1 <- c(n1j, n0j)
+    u1 <- c(n1j, n0j)
+    
+    if(verbose) message("\tx Upper and lower bounds")
+    # upper and lower bounds
+    A2 <- Matrix::Diagonal(n)
+    l2 <- rep(lowlim, n)
+    u2 <- rep(uplim, n)
+    
+    if(verbose) message("\tx Combining constraints")
+    A <- rbind(A1, A2)
+    l <- c(l1, l2)
+    u <- c(u1, u2)
+    
+    return(list(A = A, l = l, u = u))
+  }
+  
+  # construct constraint matrix
+  if(verbose) message("Creating constraint matrix...")
+  if(is.null(data_in$constraints)) {
+    constraints <- create_constraints_treatment_kernel(X1
+                                                       lowlim, uplim, verbose)
+  } else {
+    constraints <- data_in$constraints
+    constraints$l[(J + 1):(J + n)] <- lowlim
+    constraints$u[(J + 1):(J + n)] <- uplim
+  }
+  
+  # set optimization settings
+  settings <- do.call(osqp::osqpSettings,
+                      c(list(verbose = verbose,
+                             eps_rel = eps_rel,
+                             eps_abs = eps_abs),
+                        list(...)))
+  
+  # solve optimization problem (possibly with uniform weights)
+  if(init_uniform) {
+    if(verbose) message("Initializing with uniform weights")
+    unifw <- get_uniform_weights_treatment_kernel(nj)
+    obj <- osqp::osqp(P, q, constraints$A,
+                      constraints$l, constraints$u, pars = settings)
+    obj$WarmStart(x = unifw)
+    solution <- obj$Solve()
+  } else {
+    solution <- osqp::solve_osqp(P, q, constraints$A,
+                                 constraints$l, constraints$u,
+                                 pars = settings)
+  }
+  
+  # convert weights into a matrix
+  if(verbose) message("Reordering weights...")
+  weights <- matrix(0, ncol = J, nrow = n)
+  cumsumnj <- cumsum(c(1, nj))
+  for(j in 1:J) {
+    weights[idxs[[j]], j] <- solution$x[cumsumnj[j]:(cumsumnj[j + 1] - 1)]
+  }
+  
+  # compute imbalance matrix
+  imbalancetau <- as.matrix(colMeans(Xtarget) - t(Xtau) %*% (weights * pro_trt))
+  imbalance0 <- as.matrix(t(X0) %*% (weights * pro_trt) -
+                            t(X0) %*% (weights * pro_ctr))
+  
+  # collapse weight matrix to vector
+  weights <- rowSums(weights)
+  
+  # package program components if requested by user
+  if(return_program) {
+    program <- list(P = P  - lambda * I0,
+                    q = q, constraints = constraints)
+  } else {
+    program <- NULL
+  }
+  
+  # return output
+  return(list(weights = weights, imbalance_0 = imbalance0,
+              imbalance_tau = imbalancetau, program = program))
   
   if(verbose) message("Creating constraint matrix...")
   if(is.null(data_in$constraints)) {
@@ -124,6 +221,13 @@ standardize <- function(X, target, Z, lambda = 0, lowlim = 0, uplim = 1,
   
 }
 
+
+create_q_vector_treatment_kernel <- function(X1, X0, kernel) {
+  q <- -rowMeans(kernlab::kernelMatrix(kernel = kernel,
+                                       x = X1,
+                                       y = X0))
+  return(q)
+}
 
 #' Create diagonal regularization matrix
 #' @param Xz list of J n x d matrices of covariates split by group
