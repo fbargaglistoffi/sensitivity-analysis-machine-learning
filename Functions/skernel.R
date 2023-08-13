@@ -44,6 +44,7 @@ standardize_treatment_hybrid <- function(X0, X1,
   X0 <- as.matrix(X0)
   X1 <- as.matrix(X1)
   n <- nrow(X0)
+  d <- ncol(X0)
   
   # get row IDs of units by site
   idx <- 1:nrow(X0)
@@ -51,7 +52,7 @@ standardize_treatment_hybrid <- function(X0, X1,
   # construct linear term vector
   if(verbose) message("Creating linear term vector...")
   if(is.null(data_in$q)) {
-    q <- -rowMeans(kernlab::kernelMatrix(kernel = kernel, x = X0,y = X1))
+    q <- -rowMeans(kernlab::kernelMatrix(kernel = kernel, x = X0, y = X1))
   } else {
     q <- data_in$q
   }
@@ -106,11 +107,8 @@ standardize_treatment_hybrid <- function(X0, X1,
     u <- c(u1, u2)
     
     return(list(A = A, l = l, u = u))
-  } else {
-    constraints <- data_in$constraints
-    constraints$l[(J + 1):(J + n)] <- lowlim
-    constraints$u[(J + 1):(J + n)] <- uplim
   }
+  
   # toc(log = TRUE)
   
   # set optimization settings
