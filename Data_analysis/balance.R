@@ -59,19 +59,21 @@ X0 <- unname(X[S == 0,])
 X1 <- unname(X[S == 1,])
 
 ## SuperLearner
-# samp <- c(SuperLearner(Y = S, X = datmodel[,vars], family = binomial(link = "logit"),
-#                         SL.library = c("SL.glmnet", "SL.ranger"))$SL.predict)
-# 
-# weights <- (1 - samp)*mean(S)/(samp*mean(1 - S))
-# weights[weights < 0] <- 0
+samp <- c(SuperLearner(Y = S, X = datmodel[,vars], family = binomial(link = "logit"),
+                        SL.library = c("SL.mean","SL.glmnet","SL.xgboost"))$SL.predict)
+
+weights <- (1 - samp)*mean(S)/(samp*mean(1 - S))
+weights[weights < 0] <- 0
+cutoff <- quantile(weights, 0.99)
+weights[weights > cutoff] <- cutoff
 
 ## Approximate (or Exact) Quadratic Balancing
 
-fit_t <- standardize(X = X1, Z = rep(1, nrow(X1)), target = colMeans(X0),
-                     exact_global = FALSE, scale_sample_size = TRUE, lambda = 0)
-weights <- rep(1, nrow(X))
-weights[S == 1] <- n_1*c(fit_t$weights)
-weights[weights < 0] <- 0
+# fit_t <- standardize(X = X1, Z = rep(1, nrow(X1)), target = colMeans(X0),
+#                      exact_global = FALSE, scale_sample_size = TRUE, lambda = 0)
+# weights <- rep(1, nrow(X))
+# weights[S == 1] <- n_1*c(fit_t$weights)
+# weights[weights < 0] <- 0
 
 ## Exact Entropy Balancing
 
@@ -90,91 +92,76 @@ weights[weights < 0] <- 0
 
 sample <- datmodel
 
-## Increase Sample Size
-
-# sample.tmp <- data.frame(datmodel)[S == 1,]
-# idx <- sample(1:sum(S), 10000, replace = TRUE)
-# sample_s <- sample.tmp[idx,]
-# sample <- rbind(data.frame(sample_s), data.frame(datmodel[S == 0,]))
-# S <- c(rep(1, times = 10000), rep(0, times = nrow(X0)))
-# X <- model.matrix(formula(paste('~', vars, collapse = "+")), data = sample)[,-1]
-# 
-# fit_t <- standardize(X = X[S == 1,], Z = S[S == 1], target = colMeans(X[S == 0,]),
-#                      exact_global = FALSE, scale_sample_size = TRUE, lambda = 1)
-# weights <- rep(1, nrow(X))
-# weights[S == 1] <- n_1*c(fit_t$weights)
-# weights[weights < 0] <- 0
-
 # Perform 10 fold cross validation
 system.time({
   
-    # Segment the data by fold using the which() function 
-    index <- which(S == 1)
-    
-    test <- sample[-index, ]
-    train <- sample[index, ]
-    wts <- weights[index]
-    
-    x_train <- train[,c(vars)]
-    x_test <- test[,c(vars)]
-    y_train <- as.vector(train[,c("PV1FLIT")])
-    y_test <- as.vector(test[,c("PV1FLIT")])
+  set.seed(42)
+  
+  # Segment the data by fold using the which() function 
+  index <- which(S == 1)
+  
+  test <- sample[-index, ]
+  train <- sample[index, ]
+  wts <- weights[index]
+  
+  x_train <- train[,c(vars)]
+  x_test <- test[,c(vars)]
+  y_train <- as.vector(train[,c("PV1FLIT")])
+  y_test <- as.vector(test[,c("PV1FLIT")])
 
-    # Fit Initial Models
-    set.seed(42)
-    rf_init <- ranger(y ~ ., data = as.data.frame(cbind(y = y_train, x_train)), num.trees = 10000,
-                       max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 1))
-    
-    # SuoerLearner Alternative
-    # sl_init <- SuperLearner(Y = y_train, X = x_train,
-    #                         SL.library = c("SL.mean", "SL.glmnet","SL.xgboost", "SL.ranger"))
-
-    # Initial Model Predictions
-    fit_train_unweight <- predict(rf_init, data = x_train, type = "response")$predictions
-    fit_test_unweight <- predict(rf_init, data = x_test, type = "response")$predictions
-    
-    # SuoerLearner Alternative
-    # fitted_base <- predict(SuperLearner(Y = y_train, X = x_train,
-    #                                     SL.library = c("SL.mean", "SL.glmnet","SL.xgboost", "SL.ranger")))
-    
-    eps <- (y_train - fit_train_unweight)
-    
-    # Fit Weighted Models
-    rf_weight <- ranger(y ~ ., data = as.data.frame(cbind(y = y_train, x_train)), num.trees = 10000,
-                         case.weights = weights[S == 1], max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 1))
-
-    # Predict Pseudo Model Fit
-    fit_train_weight <- predict(rf_weight, data = x_train, type = "response")$predictions
-    fit_test_weight <- predict(rf_weight, data = x_test, type = "response")$predictions
-    
-    # Fit DR model
-    # rf_dr <- ranger(eps ~ ., data = as.data.frame(cbind(eps = eps, x_train)), num.trees = 5000,
-    #                 case.weights = weights[S == 1], max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 1))
-    # 
-    # fit_train_dr <- predict(rf_dr, data = x_train, type = "response")$predictions + fit_train_unweight
-    # fit_test_dr <- predict(rf_dr, data = x_test, type = "response")$predictions + fit_test_unweight
-    
-    rf_dr <- xgboost(label = eps, dat = model.matrix(~ ., data = x_train), nrounds = 1000, weight = weights[S == 1])
-    fit_train_dr <- predict(rf_dr, newdata = model.matrix(~ ., data = x_train)) + fit_train_unweight
-    fit_test_dr <- predict(rf_dr, newdata = model.matrix(~ ., x_test)) + fit_test_unweight
-    
-    diag_test_weight <- postResample(y_test, fit_test_weight)
-    diag_test_unweight <- postResample(y_test, fit_test_unweight)  
-    diag_test_dr <- postResample(y_test, fit_test_dr)  
-    diag_train_weight <- postResample(y_train, fit_train_weight)  
-    diag_train_unweight <- postResample(y_train, fit_train_unweight)
-    diag_train_dr <- postResample(y_train, fit_train_dr)  
-    
-    RMSE_rf <- c(diag_train_unweight[1], diag_train_weight[1], diag_train_dr[1],
-                 diag_test_unweight[1], diag_test_weight[1], diag_test_dr[1])
-    Rsquared_rf <- c(diag_train_unweight[2], diag_train_weight[2], diag_train_dr[2],
-                     diag_test_unweight[2], diag_test_weight[2], diag_test_dr[2])
-    MAE_rf <- c(diag_train_unweight[3], diag_train_weight[3], diag_train_dr[3],
-                diag_test_unweight[3], diag_test_weight[3], diag_test_dr[3])
-    
-    out <- rbind(RMSE_rf, Rsquared_rf, MAE_rf)
-    rownames(out) <- c("RMSE", "Rsquared", "MAE")
-    colnames(out) <- c("Train - Unweighted", "Train - Weighted", "Train - DR", 
-                       "Test - Unweighted", "Test - Weighted", "Test - DR")
+  # Fit initial model with ranger
+  mod_init <- ranger(y ~ ., data = as.data.frame(cbind(y = y_train, x_train)), num.trees = 5000,
+                     max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
+  fit_train_init <- predict(mod_init, data = x_train, type = "response")$predictions
+  fit_test_init <- predict(mod_init, data = x_test, type = "response")$predictions
+  
+  # Fit initial model with xgboost
+  # mod_init <- xgboost(label = y_train, dat = model.matrix(~ ., data = x_train), nrounds = 500)
+  # fit_train_init <- predict(mod_init, newdata = model.matrix(~ ., data = x_train))
+  # fit_test_init <- predict(mod_init, newdata = model.matrix(~ ., x_test))
+  
+  # Fit weighted model with ranger
+  mod_weight <- ranger(y ~ ., data = as.data.frame(cbind(y = y_train, x_train)), num.trees = 10000,
+                       case.weights = wts, max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
+  fit_train_weight <- predict(mod_weight, data = x_train, type = "response")$predictions
+  fit_test_weight <- predict(mod_weight, data = x_test, type = "response")$predictions
+  
+  # Fit weighted model with xgboost
+  # mod_weight <- xgboost(label = y_train, dat = model.matrix(~ ., data = x_train), nrounds = 1000, weight = wts)
+  # fit_train_weight <- predict(mod_weight, newdata = model.matrix(~ ., data = x_train))
+  # fit_test_weight <- predict(mod_weight, newdata = model.matrix(~ ., x_test))
+  
+  # Fit DR model with ranger
+  eps <- (y_train - fit_train_init)
+  mod_dr <- ranger(eps ~ ., data = as.data.frame(cbind(eps = eps, x_train)), num.trees = 5000,
+                  case.weights = wts, max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
+  fit_train_dr <- predict(mod_dr, data = x_train, type = "response")$predictions + fit_train_init
+  fit_test_dr <- predict(mod_dr, data = x_test, type = "response")$predictions + fit_test_init
+  
+  # Fit DR model with xgboost
+  # eps <- (y_train - fit_train_init)
+  # mod_dr <- xgboost(label = eps, dat = model.matrix(~ ., data = x_train), nrounds = 500, weight = wts)
+  # fit_train_dr <- predict(mod_dr, newdata = model.matrix(~ ., data = x_train)) + fit_train_init
+  # fit_test_dr <- predict(mod_dr, newdata = model.matrix(~ ., x_test)) + fit_test_init
+  
+  diag_test_weight <- postResample(y_test, fit_test_weight)
+  diag_test_init <- postResample(y_test, fit_test_init)  
+  diag_test_dr <- postResample(y_test, fit_test_dr)  
+  diag_train_weight <- postResample(y_train, fit_train_weight)  
+  diag_train_init <- postResample(y_train, fit_train_init)
+  diag_train_dr <- postResample(y_train, fit_train_dr)  
+  
+  RMSE_rf <- c(diag_train_init[1], diag_train_weight[1], diag_train_dr[1],
+               diag_test_init[1], diag_test_weight[1], diag_test_dr[1])
+  Rsquared_rf <- c(diag_train_init[2], diag_train_weight[2], diag_train_dr[2],
+                   diag_test_init[2], diag_test_weight[2], diag_test_dr[2])
+  MAE_rf <- c(diag_train_init[3], diag_train_weight[3], diag_train_dr[3],
+              diag_test_init[3], diag_test_weight[3], diag_test_dr[3])
+  
+  out <- rbind(RMSE_rf, Rsquared_rf, MAE_rf)
+  rownames(out) <- c("RMSE", "Rsquared", "MAE")
+  colnames(out) <- c("Train - Initial", "Train - Weighted", "Train - DR", 
+                     "Test - Initial", "Test - Weighted", "Test - DR")
     
 })
+

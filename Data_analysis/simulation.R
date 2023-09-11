@@ -21,7 +21,7 @@ sim_fun <- function(out_misspecify = FALSE, samp_misspecify = FALSE) {
   }
   
   samp <- predict(sampmod, newdata = data.frame(X = X), type = "response")
-  IOW <- (1 - samp)/samp
+  IOW <- (1 - samp)*mean(S)/(samp*(1 - mean(S)))
   
   if (out_misspecify) {
     
@@ -63,5 +63,5 @@ sim_fun <- function(out_misspecify = FALSE, samp_misspecify = FALSE) {
   
 }
 
-sim_out <- replicate(n.iter, sim_fun(out_misspecify = FALSE, samp_misspecify = TRUE))
+sim_out <- replicate(n.iter, sim_fun(out_misspecify = TRUE, samp_misspecify = TRUE))
 rowMeans(sim_out)
