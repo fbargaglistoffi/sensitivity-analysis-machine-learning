@@ -25,6 +25,7 @@ library(BART)
 library(earth)
 library(xgboost)
 
+# Plotting
 library(ggplot2)
 library(knitr)
 
@@ -164,4 +165,3 @@ system.time({
                      "Test - Initial", "Test - Weighted", "Test - DR")
     
 })
-
