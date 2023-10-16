@@ -1,67 +1,76 @@
 library(mgcv)
+library(truncnorm)
+
+source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_transport.R")
 
 n.iter <- 1000
 
-sim_fun <- function(out_misspecify = FALSE, samp_misspecify = FALSE) {
+sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = seq(0, 5, length.out = 21)) {
   
-  X <- runif(1000, 0, 10)
-  V <- runif(1000, 0, 10)
+  print(i)
   
-  mu <- 1 + X + 0.5*V
-  Y <- rnorm(1000, mu, sqrt(X + V))
+  ## simulate data
+  X1 <- rnorm(1000, 1, 2)
+  X2 <- rnorm(1000, -1, 2)
+  X <- cbind(X1 = X1, X2 = X2)
+  
+  mu <- 10 + 2*X1 + X2
+  Y <- rtruncnorm(1000, a = 0, mean = mu, sd = exp((X1 + X2)/4))
 
-  eta <- 1.5 - 0.3*X - 0.5*V
+  eta <- 0.5 - 0.3*X1 - 0.5*X2
   S <- rbinom(1000, 1, plogis(eta))
-  D <- rep(c(0,1), each = 500)
   
   if (samp_misspecify == TRUE) {
-    sampmod <- glm(S ~ X, family = binomial(), subset = D == 1)
+    sampmod <- glm(S ~ X1, family = binomial())
   } else {
-    sampmod <- glm(S ~ X + V, family = binomial(), subset = D == 1)
+    sampmod <- glm(S ~ X1 + X2, family = binomial())
   }
   
-  samp <- predict(sampmod, newdata = data.frame(X = X, V = V), type = "response")
+  ## fit models
+  samp <- predict(sampmod, newdata = data.frame(X = X), type = "response")
   IOW <- (1 - samp)*mean(S)/(samp*(1 - mean(S)))
   
   if (out_misspecify) {
     
     # OLS
-    outmod <- glm(Y ~ X, subset = (D == 1 & S == 1), family = gaussian())
+    outmod <- glm(Y ~ X1, subset = (S == 1), family = gaussian())
     out <- predict(outmod, newdata = data.frame(X = X), type = "response")
     
     # WLS
-    outmod.w <- glm(Y ~ X, weights = IOW, subset = (D == 1 & S == 1), family = gaussian)
+    outmod.w <- glm(Y ~ X, weights = IOW, subset = (S == 1), family = gaussian)
     out.w <- predict(outmod.w, newdata = data.frame(X = X), type = "response")
     
-    # DB Learner
-    DB <- (Y - out)
-    outmod.db <- glm(DB ~ X, subset = (D == 1 & S == 1), weights = IOW, family = gaussian())
-    out.db <- predict(outmod.db, newdata = data.frame(X = X), type = "response") + out
+    # DB Learner == WLS
+    # DB <- (Y - out)
+    # outmod.db <- glm(DB ~ X, subset = (D == 1 & S == 1), weights = IOW, family = gaussian())
+    # out.db <- predict(outmod.db, newdata = data.frame(X = X), type = "response") + out
     
   } else {
     
     # OLS
-    outmod <- glm(Y ~ X + V, subset = (D == 1 & S == 1), family = gaussian())
-    out <- predict(outmod, newdata = data.frame(X = X, V = V), type = "response")
+    outmod <- glm(Y ~ X1 + X2, subset = (S == 1), family = gaussian())
+    out <- predict(outmod, newdata = data.frame(X = X), type = "response")
     
     # WLS
-    outmod.w <- glm(Y ~ X + V, weights = IOW, subset = (D == 1 & S == 1), family = gaussian)
-    out.w <- predict(outmod.w, newdata = data.frame(X = X, V = V), type = "response")
-    
-    # DB Learner
-    DB <- (Y - out)
-    outmod.db <- glm(DB ~ X + V, subset = (D == 1 & S == 1), weights = IOW, family = gaussian())
-    out.db <- predict(outmod.db, newdata = data.frame(X = X, V = V), type = "response") + out
+    outmod.w <- glm(Y ~ X1 + X2, weights = IOW, subset = (S == 1), family = gaussian)
+    out.w <- predict(outmod.w, newdata = data.frame(X = X), type = "response")
     
   }
   
-  rmse <- sqrt(mean((Y[D == 0 & S == 0] - out[D == 0 & S == 0])^2))
-  rmse.w <- sqrt(mean((Y[D == 0 & S == 0] - out.w[D == 0 & S == 0])^2))
-  rmse.db <- sqrt(mean((Y[D == 0 & S == 0] - out.db[D == 0 & S == 0])^2))
+  rmse <- sqrt(mean((Y[S == 0] - out[S == 0])^2))
+  rmse.w <- sqrt(mean((Y[S == 0] - out.w[S == 0])^2))
   
-  return(c(rmse, rmse.w, rmse.db))
+  sens <- do.call(rbind, lapply(test, dr_sens, S = S, Y = Y, W = X, out = out, samp = samp, q = log, family = gaussian()))
+  sens.w <- do.call(rbind, lapply(test, dr_sens, S = S, Y = Y, W = X, out = out.w, samp = samp, q = log, family = gaussian()))
+  
+  return(list(rmse = rmse, rmse.w = rmse.w, sens = sens, sens.w = sens.w))
   
 }
 
-sim_out <- replicate(n.iter, sim_fun(out_misspecify = FALSE, samp_misspecify = FALSE))
-rowMeans(sim_out)
+sim_out <- lapply(1:n.iter, sim_fun, out_misspecify = FALSE, samp_misspecify = FALSE)
+mean(do.call(c, lapply(sim_out, function(z) z$rmse)))
+mean(do.call(c, lapply(sim_out, function(z) z$rmse.w)))
+arg <- do.call(rbind, lapply(sim_out, function(z) c(z$sens[,2,drop = FALSE])))
+arg.w <- do.call(rbind, lapply(sim_out, function(z) c(z$sens.w[,2,drop = FALSE])))
+apply(arg, 2, function(x) mean(do.call(c, x), na.rm = T))
+apply(arg.w, 2, function(x) mean(do.call(c, x), na.rm = T))
