@@ -5,6 +5,8 @@ source("~/Github/sensitivity-analysis-machine-learning/Functions/outliers_bart.R
 source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_bart.R")
 source("~/Github/sensitivity-analysis-machine-learning/Functions/calibration.R")
 source("~/Github/sensitivity-analysis-machine-learning/Functions/standardize.R")
+source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_transport.R")
+
 
 # data cleaning
 library(devtools)
@@ -61,11 +63,12 @@ X1 <- unname(X[S == 1,])
 
 ## SuperLearner
 samp <- c(SuperLearner(Y = S, X = datmodel[,vars], family = binomial(link = "logit"),
-                        SL.library = c("SL.mean","SL.glmnet","SL.xgboost"))$SL.predict)
+                       SL.library = c("SL.mean","SL.glmnet","SL.xgboost"))$SL.predict)
 
-weights <- (1 - samp)*mean(S)/(samp*mean(1 - S))
+weights <- (1 - samp)/(samp)
 weights[weights < 0] <- 0
-cutoff <- quantile(weights, 0.99)
+weights[S == 0] <- 1 
+cutoff <- quantile(weights[S == 9], 0.99)
 weights[weights > cutoff] <- cutoff
 
 ## Approximate (or Exact) Quadratic Balancing
@@ -109,12 +112,17 @@ system.time({
   x_test <- test[,c(vars)]
   y_train <- as.vector(train[,c("PV1FLIT")])
   y_test <- as.vector(test[,c("PV1FLIT")])
-
+  
+  y <- c(y_train, y_test)
+  x <- rbind(x_train, x_test)
+  s <- rep(c(1,0), c(nrow(x_train), nrow(x_test)))
+  
   # Fit initial model with ranger
   mod_init <- ranger(y ~ ., data = as.data.frame(cbind(y = y_train, x_train)), num.trees = 5000,
                      max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
   fit_train_init <- predict(mod_init, data = x_train, type = "response")$predictions
   fit_test_init <- predict(mod_init, data = x_test, type = "response")$predictions
+  fit_init <- c(fit_train_init, fit_test_init)
   
   # Fit initial model with xgboost
   # mod_init <- xgboost(label = y_train, dat = model.matrix(~ ., data = x_train), nrounds = 500)
@@ -126,6 +134,7 @@ system.time({
                        case.weights = wts, max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
   fit_train_weight <- predict(mod_weight, data = x_train, type = "response")$predictions
   fit_test_weight <- predict(mod_weight, data = x_test, type = "response")$predictions
+  fit_weight <- c(fit_train_weight, fit_test_weight)
   
   # Fit weighted model with xgboost
   # mod_weight <- xgboost(label = y_train, dat = model.matrix(~ ., data = x_train), nrounds = 1000, weight = wts)
@@ -135,9 +144,10 @@ system.time({
   # Fit DR model with ranger
   eps <- (y_train - fit_train_init)
   mod_dr <- ranger(eps ~ ., data = as.data.frame(cbind(eps = eps, x_train)), num.trees = 5000,
-                  case.weights = wts, max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
+                   case.weights = wts, max.depth = 10, min.node.size = 5, mtry = max(ncol(x_train)/3, 3))
   fit_train_dr <- predict(mod_dr, data = x_train, type = "response")$predictions + fit_train_init
   fit_test_dr <- predict(mod_dr, data = x_test, type = "response")$predictions + fit_test_init
+  fit_dr <- c(fit_train_dr, fit_test_dr)
   
   # Fit DR model with xgboost
   # eps <- (y_train - fit_train_init)
@@ -152,6 +162,7 @@ system.time({
   diag_train_init <- postResample(y_train, fit_train_init)
   diag_train_dr <- postResample(y_train, fit_train_dr)  
   
+  # Model Diagnostics.
   RMSE_rf <- c(diag_train_init[1], diag_train_weight[1], diag_train_dr[1],
                diag_test_init[1], diag_test_weight[1], diag_test_dr[1])
   Rsquared_rf <- c(diag_train_init[2], diag_train_weight[2], diag_train_dr[2],
@@ -159,9 +170,15 @@ system.time({
   MAE_rf <- c(diag_train_init[3], diag_train_weight[3], diag_train_dr[3],
               diag_test_init[3], diag_test_weight[3], diag_test_dr[3])
   
+  # Sensitivity Analysis
+  eta <- seq(0,0.25,length.out = 26)
+  sens <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_init, samp = weights, q = log, family = gaussian()))
+  sens.w <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_weight, samp = weights, q = log, family = gaussian()))
+  sens.dr <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_dr, samp = weights, q = log, family = gaussian()))
+  
   out <- rbind(RMSE_rf, Rsquared_rf, MAE_rf)
   rownames(out) <- c("RMSE", "Rsquared", "MAE")
   colnames(out) <- c("Train - Initial", "Train - Weighted", "Train - DR", 
                      "Test - Initial", "Test - Weighted", "Test - DR")
-    
+  
 })

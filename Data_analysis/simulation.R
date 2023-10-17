@@ -5,19 +5,19 @@ source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_tra
 
 n.iter <- 1000
 
-sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = seq(0, 5, length.out = 21)) {
+sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = seq(0, 0.25, length.out = 21)) {
   
   print(i)
   
   ## simulate data
   X1 <- rnorm(1000, 1, 2)
   X2 <- rnorm(1000, -1, 2)
-  X <- cbind(X1 = X1, X2 = X2)
+  X <- data.frame(X1 = X1, X2 = X2)
   
-  mu <- 10 + 2*X1 + X2
-  Y <- rtruncnorm(1000, a = 0, mean = mu, sd = exp((X1 + X2)/4))
+  mu <- 3 + 2*X1 + X2
+  Y <- rtruncnorm(1000, a = 0, mean = mu, sd = abs((X1 + X2)))
 
-  eta <- 0.5 - 0.3*X1 - 0.5*X2
+  eta <- 0.5*X1 - 0.5*X2
   S <- rbinom(1000, 1, plogis(eta))
   
   if (samp_misspecify == TRUE) {
@@ -28,7 +28,7 @@ sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = s
   
   ## fit models
   samp <- predict(sampmod, newdata = data.frame(X = X), type = "response")
-  IOW <- (1 - samp)*mean(S)/(samp*(1 - mean(S)))
+  IOW <- (1 - samp)/samp
   
   if (out_misspecify) {
     
@@ -37,7 +37,7 @@ sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = s
     out <- predict(outmod, newdata = data.frame(X = X), type = "response")
     
     # WLS
-    outmod.w <- glm(Y ~ X, weights = IOW, subset = (S == 1), family = gaussian)
+    outmod.w <- glm(Y ~ X1, weights = IOW, subset = (S == 1), family = gaussian)
     out.w <- predict(outmod.w, newdata = data.frame(X = X), type = "response")
     
     # DB Learner == WLS
@@ -67,10 +67,17 @@ sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = s
   
 }
 
+# Run Simulation
 sim_out <- lapply(1:n.iter, sim_fun, out_misspecify = FALSE, samp_misspecify = FALSE)
+
+# Report RMSE
 mean(do.call(c, lapply(sim_out, function(z) z$rmse)))
 mean(do.call(c, lapply(sim_out, function(z) z$rmse.w)))
+
+# Report Sensitivities
+eta <- do.call(rbind, lapply(sim_out, function(z) c(z$sens[,1,drop = FALSE]))) # sensitivity parameter
 arg <- do.call(rbind, lapply(sim_out, function(z) c(z$sens[,2,drop = FALSE])))
 arg.w <- do.call(rbind, lapply(sim_out, function(z) c(z$sens.w[,2,drop = FALSE])))
-apply(arg, 2, function(x) mean(do.call(c, x), na.rm = T))
-apply(arg.w, 2, function(x) mean(do.call(c, x), na.rm = T))
+sens <- cbind(apply(eta, 2, function(x) mean(do.call(c, x), na.rm = T)),
+              apply(arg, 2, function(x) mean(do.call(c, x), na.rm = T)), 
+              apply(arg.w, 2, function(x) mean(do.call(c, x), na.rm = T)))

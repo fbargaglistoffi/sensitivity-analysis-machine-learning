@@ -11,10 +11,10 @@ dr_sens <- function(eta, S, Y, W, out, samp, q = I, family = gaussian()) {
   if (length(samp) != length(S))
     stop("length(samp) != length(S)")
   
-  IOW <- (1 - samp)*mean(S)/(samp*(1 - mean(S)))
+  IOW <- (1 - samp)/samp
   q <- match.fun(q)
   
-  loss <- (Y - out)^2
+  loss <- ((Y - out)/sd(Y - out))^2
   pseudo0 <- exp(eta*q(Y))
   pseudo <- pseudo0*loss
   
@@ -26,7 +26,7 @@ dr_sens <- function(eta, S, Y, W, out, samp, q = I, family = gaussian()) {
   theta <- p/p0
 
   phi <- sum((I(S == 0)*theta + I(S == 1)*(IOW*pseudo0/p0)*(loss - theta)))/sum(S == 0)
-  eif <- (I(S == 0)*(theta - phi)/mean(S == 0) + I(S == 1)*(IOW*pseudo0/p0)*(loss - theta))^2
+  eif <- (I(S == 0)*(theta - phi)/mean(S == 0) + I(S == 1)*(IOW*pseudo0/p0)*(loss - theta)/mean(S == 0))^2
   var <- mean(eif)/length(eif)
   
   return(list(eta = eta, loss = phi, loss.var = var))
@@ -40,9 +40,6 @@ base_sens <- function(eta, S, Y, W, out, q = I(), family = family) {
   
   if (length(out) != length(S))
     stop("length(out) != length(S)")
-  
-  if (length(samp) != length(S))
-    stop("length(samp) != length(S)")
   
   q <- match.fun(q)
   
