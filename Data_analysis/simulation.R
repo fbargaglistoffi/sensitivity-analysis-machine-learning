@@ -1,9 +1,10 @@
 library(mgcv)
 library(truncnorm)
+library(SuperLearner)
 
 source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_transport.R")
 
-n.iter <- 1000
+n.iter <- 10
 
 sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = seq(0, 0.25, length.out = 21)) {
   
@@ -28,7 +29,7 @@ sim_fun <- function(i, out_misspecify = FALSE, samp_misspecify = FALSE, test = s
   
   ## fit models
   samp <- predict(sampmod, newdata = data.frame(X = X), type = "response")
-  IOW <- (1 - samp)/samp
+  IOW <- (1 - samp)*mean(S)/(samp*(1 - mean(S)))
   
   if (out_misspecify) {
     

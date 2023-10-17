@@ -63,9 +63,9 @@ X1 <- unname(X[S == 1,])
 
 ## SuperLearner
 samp <- c(SuperLearner(Y = S, X = datmodel[,vars], family = binomial(link = "logit"),
-                       SL.library = c("SL.mean","SL.glmnet","SL.xgboost"))$SL.predict)
+                       SL.library = c("SL.mean","SL.glmnet","SL.ranger"))$SL.predict)
 
-weights <- (1 - samp)/(samp)
+weights <- (1 - samp)*mean(S)/(samp*mean(1 - S))
 weights[weights < 0] <- 0
 weights[S == 0] <- 1 
 cutoff <- quantile(weights[S == 9], 0.99)
@@ -172,9 +172,12 @@ system.time({
   
   # Sensitivity Analysis
   eta <- seq(0,0.25,length.out = 26)
-  sens <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_init, samp = weights, q = log, family = gaussian()))
-  sens.w <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_weight, samp = weights, q = log, family = gaussian()))
-  sens.dr <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_dr, samp = weights, q = log, family = gaussian()))
+  sens <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_init,
+                                samp = weights, q = log, family = gaussian()))
+  sens.w <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_weight,
+                                  samp = weights, q = log, family = gaussian()))
+  sens.dr <- do.call(rbind, lapply(eta, dr_sens, S = s, Y = y, W = x, out = fit_dr,
+                                   samp = weights, q = log, family = gaussian()))
   
   out <- rbind(RMSE_rf, Rsquared_rf, MAE_rf)
   rownames(out) <- c("RMSE", "Rsquared", "MAE")
