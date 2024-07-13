@@ -7,7 +7,6 @@ source("~/Github/sensitivity-analysis-machine-learning/Functions/calibration.R")
 source("~/Github/sensitivity-analysis-machine-learning/Functions/standardize.R")
 source("~/Github/sensitivity-analysis-machine-learning/Functions/sensitivity_transport.R")
 
-
 # data cleaning
 library(devtools)
 library(tidyverse)
@@ -62,22 +61,22 @@ X0 <- unname(X[S == 0,])
 X1 <- unname(X[S == 1,])
 
 ## SuperLearner
-samp <- c(SuperLearner(Y = S, X = datmodel[,vars], family = binomial(link = "logit"),
-                       SL.library = c("SL.mean","SL.glmnet","SL.ranger"))$SL.predict)
-
-weights <- (1 - samp)*mean(S)/(samp*mean(1 - S))
-weights[weights < 0] <- 0
-weights[S == 0] <- 1 
-cutoff <- quantile(weights[S == 9], 0.99)
-weights[weights > cutoff] <- cutoff
+# samp <- c(SuperLearner(Y = S, X = datmodel[,vars], family = binomial(link = "logit"),
+#                        SL.library = c("SL.mean","SL.glmnet","SL.ranger"))$SL.predict)
+# 
+# weights <- (1 - samp)*mean(S)/(samp*mean(1 - S))
+# weights[weights < 0] <- 0
+# weights[S == 0] <- 1 
+# cutoff <- quantile(weights[S == 9], 0.99)
+# weights[weights > cutoff] <- cutoff
 
 ## Approximate (or Exact) Quadratic Balancing
 
-# fit_t <- standardize(X = X1, Z = rep(1, nrow(X1)), target = colMeans(X0),
-#                      exact_global = FALSE, scale_sample_size = TRUE, lambda = 0)
-# weights <- rep(1, nrow(X))
-# weights[S == 1] <- n_1*c(fit_t$weights)
-# weights[weights < 0] <- 0
+fit_t <- standardize(X = datmodel[,vars], S = S, kernel = kernlab::polydot(degree = 1),
+                     exact_global = FALSE, scale_sample_size = TRUE, lambda = 0)
+weights <- rep(1, nrow(X))
+weights[S == 1] <- c(fit_t$weights)
+weights[weights < 0] <- 0
 
 ## Exact Entropy Balancing
 

@@ -1,8 +1,16 @@
+# Generic Calibration Function
 
-cfit <- function(cmat, target,
-                 base_weights = NULL,
-                 coefs_init = NULL,
-                 optim_ctrl = list(maxit = 500, reltol = 1e-10),
+#' Quadratic program for nonparametric covariate shift
+#' @param cmat Constraint Matrix
+#' @param target n x d matrix of covariates
+#' @param base_weights n x 1 vector of initial weights
+#' @param coefs_init initial dual variables
+#' @param optim_ctrl list of arguments to be passed on to optim
+#' @param ... Extra arguments for optim solver
+#' @export
+#' 
+cfit <- function(cmat, target, base_weights = NULL,
+                 coefs_init = NULL, optim_ctrl = list(maxit = 500, reltol = 1e-10),
                  ...) {
   
   if (!is.matrix(cmat))
